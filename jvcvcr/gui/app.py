@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSettings, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QSettings, QTimer, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QIcon, QKeySequence, QShortcut,
 )
@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from .. import protocol as P
-from ..device import DeviceController, LinkState, LogEntry
+from ..device import DeviceController, LinkState
 from ..macros import MacroLibrary
 from ..protocol import Deck
 from ..transport import SerialTransport, SimulatorTransport, list_serial_ports
@@ -880,7 +880,7 @@ class MainWindow(QMainWindow):
             text = (
                 "No confirmed reply to Status Sense yet.\n\n"
                 "Check the cable, that the deck has been on for at least ten "
-                "seconds, and that Mode Lock is off. Check the Console tab's "
+                "seconds, and that Mode Lock is off. Open Tools → Console and check the "
                 "traffic log for what's actually coming back."
             )
         QMessageBox.information(self, "Protocol probe", text)

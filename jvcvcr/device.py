@@ -342,7 +342,7 @@ class DeviceController:
                     # in _pending_sense back in _drain_poll_queue, at the
                     # moment they were chosen -- not here, at the moment
                     # they're actually sent, which can lag behind by up to
-                    # command_gap. Only a directly-issued query (Console tab,
+                    # command_gap. Only a directly-issued query (the Console,
                     # probe_protocol) needs booking at this point.
                     if op in P.SENSE_PAYLOAD_LEN and not job.is_poll:
                         self._pending_sense.append(op)

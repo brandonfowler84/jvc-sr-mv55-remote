@@ -17,6 +17,11 @@ pages 73–85. Not affiliated with JVC.
 
 One screen: live status beside a copy of the remote that came with the deck.
 
+<p>
+  <img src="docs/screenshot.png" alt="Main window: status card and extra keys beside the handset" width="520">
+  <img src="docs/screenshot-narrow.png" alt="The same window docked narrow, at 360 px" width="236">
+</p>
+
 - **Handset** — the RM-SSR005U remote, same keys in the same places and
   colours, sending the codes the real remote sends. Keys the selected deck
   can't use grey out, arrows repeat while held, and the keyboard works too

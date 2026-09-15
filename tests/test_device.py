@@ -88,8 +88,8 @@ def test_stop_clears_playback(rig):
 
 
 def test_remote_transport_keys_drive_the_simulator(rig):
-    """The Handset tab sends Remote Data, not direct opcodes; the simulator
-    has to honour those too or the tab looks dead offline."""
+    """The handset sends Remote Data, not direct opcodes; the simulator
+    has to honour those too or the handset looks dead offline."""
     controller, sim = rig
     controller.send_remote(0x0C)  # Play / Select
     assert wait_for(lambda: sim.decks[Deck.VCR].playing)

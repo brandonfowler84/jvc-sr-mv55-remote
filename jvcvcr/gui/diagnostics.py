@@ -142,7 +142,7 @@ def build_probes() -> list[Probe]:
             title="Remote Data, normal two-byte form",
             frames=[bytes([P.Cmd.REMOTE_DATA, KEY_COUNTER_RESET])],
             question=(
-                "Counter Reset -- exactly what a Remote tab button sends. "
+                "Counter Reset -- exactly what the extra-keys button sends. "
                 "0x39 is not a command on its own, so a NAK here would mean "
                 "the deck read it as one rather than as a key code."
             ),
@@ -473,7 +473,7 @@ class DiagnosticsDialog(QDialog):
                 "protocol -- it should already have received.\n\n"
                 "So 0x9F is not being ignored. The deck starts the command "
                 "and then expects MORE than the one key-code byte the manual "
-                "documents. Everything on the Remote tab therefore leaves the "
+                "documents. Every handset key therefore leaves the "
                 "deck half-way through a command, which also explains why the "
                 "very next command sent afterwards behaves strangely."
             )

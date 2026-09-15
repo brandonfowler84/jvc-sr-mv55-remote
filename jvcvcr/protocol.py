@@ -389,9 +389,8 @@ REMOTE_CODE_NAMES = {k.code: k.name for k in REMOTE_KEYS}
 REMOTE_GROUPS = tuple(dict.fromkeys(k.group for k in REMOTE_KEYS))
 
 #: The keys worth reaching for first.  Nearly everything else in the table
-#: duplicates a direct opcode that the Transport, Record or DVD panels already
-#: expose; these are the ones Remote Data is the *only* route to, which makes
-#: them the real reason this tab exists.
+#: duplicates a direct opcode; these are the ones Remote Data is the *only*
+#: route to.
 COMMON_REMOTE_CODES: tuple[int, ...] = (
     0x41,  # Tracking +
     0x42,  # Tracking -

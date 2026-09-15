@@ -1,7 +1,6 @@
 """A virtual copy of the RM-SSR005U, the remote that ships with the deck.
 
-The Remote tab is organised for finding a key you can name.  This one is
-organised for muscle memory: the same keys, in the same places, in the same
+Organised for muscle memory: the same keys, in the same places, in the same
 colours as the handset in your drawer, so anyone who has used the deck can
 drive it without reading a label.
 

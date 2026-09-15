@@ -1,20 +1,19 @@
-"""The user-configurable strip of remote keys under the transport controls.
+"""The user-configurable strip of remote keys under the status card.
 
-Most of the wired-remote table duplicates a direct opcode that the Transport,
-Record or DVD panels already expose.  A handful do not -- tracking, TBC,
-counter reset, CM skip and friends -- and those are the ones you reach for
-repeatedly while a capture is running.  Keeping them beside the transport
-buttons means never switching tabs mid-tape.
+The RM-SSR005U handset covers most of the wired-remote table, but not all of
+it: tracking, TBC and counter reset have no key there, and those are the ones
+you reach for repeatedly while a capture is running.  Pinned under the status
+card, they never scroll out of reach mid-tape.
 
 Which keys appear is a preference: everyone's tape workflow is different.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
-    QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QPushButton, QVBoxLayout,
 )
 
 from .. import protocol as P
