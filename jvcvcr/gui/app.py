@@ -10,9 +10,9 @@ from PySide6.QtGui import (
     QAction, QActionGroup, QIcon, QKeySequence, QShortcut,
 )
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
-    QMainWindow, QMessageBox, QSpinBox, QSplitter, QTabWidget, QTextBrowser,
-    QVBoxLayout, QWidget,
+    QApplication, QBoxLayout, QComboBox, QDialog, QDialogButtonBox,
+    QHBoxLayout, QLabel, QMainWindow, QMessageBox, QSizePolicy, QSpinBox,
+    QTextBrowser, QVBoxLayout, QWidget,
 )
 
 from .. import __version__
@@ -22,10 +22,12 @@ from ..macros import MacroLibrary
 from ..protocol import Deck
 from ..transport import SerialTransport, SimulatorTransport, list_serial_ports
 from . import theme
+from .handset import HandsetPanel
 from .panels import (
-    ConsolePanel, DeckSelector, DvdPanel, ElidedLabel, FlowLayout, MacroPanel,
-    RecordPanel, RemotePanel, StatusPanel, button, dim, heading, scrollable,
+    ConsolePanel, ElidedLabel, FlowLayout, MacroPanel, StatusPanel, button,
+    card, dim, heading, scrollable,
 )
+from .quickkeys import QuickKeysBar
 
 APP_NAME = "JVC SR-MV55 Control"
 ORG_NAME = "jvcvcr"
@@ -75,7 +77,8 @@ class ConnectionBar(QWidget):
         layout = FlowLayout(self, spacing=8)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        layout.addWidget(dim("Port"))
+        self.port_label = dim("Port")
+        layout.addWidget(self.port_label)
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(200)
         self.port_combo.setMaximumWidth(420)
@@ -114,6 +117,18 @@ class ConnectionBar(QWidget):
             index = self.port_combo.findData(current)
             if index >= 0:
                 self.port_combo.setCurrentIndex(index)
+
+    def set_compact(self, compact: bool) -> None:
+        """Fit the bar on one row in a narrow window.
+
+        The "Port" caption and the status text are what push Connect onto a
+        second row. Neither is lost: the LED carries the link state, and the
+        same message is in the window's status bar.
+        """
+        self.port_label.setVisible(not compact)
+        self.status.setVisible(not compact)
+        self.port_combo.setMinimumWidth(130 if compact else 200)
+        self.updateGeometry()
 
     def select_port(self, device: str) -> None:
         index = self.port_combo.findData(device)
@@ -253,7 +268,7 @@ their own on some Windows versions).</li>
 
 <h3>Nothing responds at all</h3>
 <ol>
-<li>Open the <b>Console</b> tab and send <code>D7</code>. A healthy deck
+<li>Open <b>Tools &rarr; Console</b> and send <code>D7</code>. A healthy deck
 answers with five status bytes. Note there is <b>no <code>D7</code> in the
 reply</b> &mdash; sense replies carry no opcode.</li>
 <li>Try a null-modem adapter, per the cable note above.</li>
@@ -283,8 +298,8 @@ else is not.</p>
 <p>The deck silently ignores a multi-byte command whose bytes arrive
 back-to-back &mdash; no reply, not even a NAK. The same bytes written
 separately, tens of milliseconds apart, work. This affects deck targeting,
-input and record-mode selection, searches, shuttle speeds and the whole Remote
-tab, while single-byte transport commands are unaffected.</p>
+input and record-mode selection, searches, shuttle speeds and every handset
+key, while single-byte transport commands are unaffected.</p>
 <p>The app spaces every byte automatically (<b>File &rarr; Settings &rarr; Gap
 between bytes</b>, 60&nbsp;ms by default).</p>
 
@@ -299,18 +314,21 @@ field filled with <code>-</code>. With no tape loaded, every field is filler.
 Both are normal.</p>
 
 <h2>Recording</h2>
-<p>The deck will not record until it receives a Rec Request. The Record tab's
-<b>Arm</b> button sends it; Stop clears it again. This mirrors the deck rather
-than hiding it, so what you see matches what the hardware is doing.</p>
+<p>Press <b>REC</b> on the handset. The app asks you to confirm, then the deck
+records straight away &mdash; the remote's REC key does not need the Rec
+Request that a serial Record command does. <b>REMAIN / REC MODE</b> changes the
+recording mode; the status card shows which one is set.</p>
 
-<h2>Remote keys</h2>
-<p>The <b>Remote</b> tab sends wired-remote key codes. Many of them only change
-something on the <b>video output</b> &mdash; Audio, Display, On Screen,
-Subtitle, Angle. Those will look like they do nothing if you are watching this
-window rather than the TV or capture feed. Keys such as Tracking, TBC and
-Counter Reset have visible effects on the deck or in the status panel.</p>
-<p>Keys belonging to the other deck are hidden unless you tick <i>Include other
-deck's keys</i>, and are labelled when shown.</p>
+<h2>The handset</h2>
+<p>The handset sends the same codes as the RM-SSR005U remote. Many keys only
+change something on the <b>video output</b> &mdash; menus, Display, On Screen,
+Subtitle, Angle &mdash; so they look like they do nothing if you are watching
+this window rather than the TV or capture feed. The status bar confirms each
+key as it goes out.</p>
+<p>Keys the selected deck cannot use are greyed out. F1&ndash;F3, TV/VCR and
+TV VOL are TV and cable-box keys, which the deck has no code for. Tracking, TBC
+and Counter Reset are not on this remote, so they sit under the status card
+instead.</p>
 
 <p style="color:{theme.ACTIVE.text_faint}">Protocol from the SR-MV45U/SR-MV55U
 user manual, pages 73&ndash;85, plus behaviour established against real
@@ -356,31 +374,31 @@ project actually ran into, in the order worth checking them.</p>
 <p>Choose <b>VCR</b> or <b>DVD</b> in the status card first &mdash; every
 command applies to whichever deck is selected, and forgetting that is the most
 common cause of "why did nothing happen".</p>
-<p>Then use the transport buttons, or the keyboard: <b>Space</b> play,
-<b>S</b> stop, <b>J</b>/<b>L</b> rewind and fast forward, <b>K</b> still,
-<b>,</b> and <b>.</b> to step a frame. Full list under
+<p>Then use the handset exactly as you would the real remote. The keyboard
+works too: <b>Space</b> play, <b>S</b> stop, <b>J</b>/<b>L</b> rewind and fast
+forward, <b>K</b> still, and &mdash; after clicking the handset &mdash; the
+arrow keys, <b>Enter</b> and <b>0</b>&ndash;<b>9</b>. Full list under
 <i>Help &rarr; Keyboard shortcuts</i>.</p>
 
 <h3>5. Recording</h3>
-<p>The deck refuses to record until it has been armed. In the <b>Record</b> tab
-choose your input and record mode, press <b>Arm</b>, then <b>Record</b>. Stop
-disarms it again. That is the deck's own behaviour, not something this app
-imposes.</p>
+<p>Choose the input with <b>INPUT +/&minus;</b> and the mode with <b>REMAIN /
+REC MODE</b>, then press <b>REC</b>. The app asks you to confirm before the
+deck starts.</p>
 
 <h3>6. Make it yours</h3>
 <ul>
-<li><b>View &rarr; Configure quick keys</b> &mdash; choose which remote keys sit
-under the transport buttons. Tracking, TBC and counter reset are there by
-default because nothing else in the app can reach them.</li>
+<li><b>View &rarr; Configure extra keys</b> &mdash; choose the keys under the
+status card. Tracking, TBC and counter reset are there by default because the
+remote has no keys for them.</li>
 <li><b>View &rarr; Dark / Light theme</b>.</li>
-<li><b>View &rarr; Compact layout</b>, or simply make the window narrow &mdash;
-it rearranges itself to sit in a strip beside a capture window.</li>
-<li><b>Macros</b> tab &mdash; save a sequence of commands with delays, handy for
-repeatable VHS&rarr;DVD runs.</li>
+<li>Make the window narrow to dock it beside a capture window &mdash; the status
+stays pinned at the top and the handset scrolls underneath.</li>
+<li><b>Tools &rarr; Macros</b> &mdash; save a sequence of commands with delays,
+handy for repeatable VHS&rarr;DVD runs.</li>
 </ul>
 
 <h3>If something misbehaves</h3>
-<p>The <b>Console</b> tab shows every byte in and out with a plain-English
+<p><b>Tools &rarr; Console</b> shows every byte in and out with a plain-English
 decode, and <b>Device &rarr; Diagnose Remote Data&hellip;</b> runs a scripted set
 of probes and reports what the results rule in and out. Between them they will
 usually find the problem without guesswork.</p>
@@ -426,12 +444,12 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(f"{APP_NAME}  {__version__}")
-        self.resize(1180, 780)
-        # Small enough to sit in a strip beside a capture window.
-        self.setMinimumSize(340, 480)
+        self.resize(780, 940)
+        # The handset's own width plus margins: narrow enough to dock beside
+        # a capture window.
+        self.setMinimumSize(360, 480)
 
         self.settings = QSettings(ORG_NAME, APP_NAME)
-        self._compact_forced = False
         self._auto_reconnect = False
         self._last_port: str | None = None
         self.controller = DeviceController()
@@ -468,75 +486,132 @@ class MainWindow(QMainWindow):
         self.connection = ConnectionBar()
         outer.addWidget(self.connection)
 
-        left = QVBoxLayout()
-        left.setSpacing(10)
+        self._outer = outer
+
         self.status_panel = StatusPanel()
         # Merged into the status card's header row, which saves a whole row
         # and keeps "which deck" next to "what is it doing".
         self.deck_selector = self.status_panel.deck_selector
-        left.addWidget(self.status_panel)
-        from .panels import TransportPanel
+        # The VCR keys this remote has no key for. Tracking above all: it is
+        # what you fight most while capturing old tapes.
+        extras = card()
+        extras.setToolTip("VCR keys the RM-SSR005U remote has no key for")
+        self._extras_layout = QVBoxLayout(extras)
+        extras_layout = self._extras_layout
+        extras_layout.setContentsMargins(16, 12, 16, 12)
+        extras_layout.setSpacing(8)
+        self._extras_heading = heading("Not on the remote")
+        extras_layout.addWidget(self._extras_heading)
+        self.quick_keys = QuickKeysBar(self.controller)
+        extras_layout.addWidget(self.quick_keys)
+        extras.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
-        self.transport_panel = TransportPanel(self.controller)
-        left.addWidget(self.transport_panel)
-        left.addStretch(1)
+        # Status and extra keys stay outside the scroll area in both layouts:
+        # however far the handset is scrolled, the deck state and the
+        # tracking keys stay in view.
+        self.side = QWidget()
+        side_layout = QVBoxLayout(self.side)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+        side_layout.setSpacing(10)
+        side_layout.addWidget(self.status_panel)
+        side_layout.addWidget(extras)
+        side_layout.addStretch(1)
 
-        left_widget = QWidget()
-        left_widget.setLayout(left)
-        # A width range rather than a fixed width, so the column can give way
-        # when the window is docked narrow instead of forcing a scrollbar.
-        left_widget.setMinimumWidth(300)
-        left_widget.setMaximumWidth(460)
-        self.left_pane = scrollable(left_widget)
-        self.left_pane.setMinimumWidth(300)
+        self.handset_panel = HandsetPanel(self.controller)
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        handset_row = QHBoxLayout()
+        handset_row.addStretch(1)
+        handset_row.addWidget(self.handset_panel)
+        handset_row.addStretch(1)
+        body_layout.addLayout(handset_row)
+        body_layout.addStretch(1)
 
-        self.tabs = QTabWidget()
-        # With many tabs in a narrow window, elide the labels and offer
-        # scroll arrows rather than letting the bar overflow.
-        self.tabs.setUsesScrollButtons(True)
-        self.tabs.setElideMode(Qt.ElideRight)
-        self.tabs.setDocumentMode(True)
-        self.record_panel = RecordPanel(self.controller)
-        self.dvd_panel = DvdPanel(self.controller)
-        self.remote_panel = RemotePanel(self.controller)
-        self.macro_panel = MacroPanel(self.controller, self.library)
+        # Two columns when wide, one when narrow -- see _apply_layout.
+        self.content = QBoxLayout(QBoxLayout.LeftToRight)
+        self.content.addWidget(self.side)
+        # Scrolls rather than squashing on a short screen: the handset is
+        # tall, and a key cut off the bottom is worse than a scrollbar.
+        self.content.addWidget(scrollable(body), 1)
+        outer.addLayout(self.content, 1)
+        self._narrow: bool | None = None
+        self._apply_layout(narrow=False)
+
+        # Built once and kept for the whole session, so the traffic log and a
+        # running macro survive their window being closed; the Tools menu
+        # only shows them.
         self.console_panel = ConsolePanel(self.controller)
-        # Each tab scrolls independently: a short window should let you reach
-        # every control by scrolling, never squash one into illegibility.
-        # The minimum heights are what the scroll areas scroll *to* -- below
-        # them the content would start clipping its own controls instead.
-        self.record_panel.setMinimumHeight(420)
-        self.dvd_panel.setMinimumHeight(520)
-        self.remote_panel.setMinimumHeight(320)
-        self.macro_panel.setMinimumHeight(360)
-        self.console_panel.setMinimumHeight(400)
-        for panel, label in (
-            (self.record_panel, "Record"),
-            (self.dvd_panel, "DVD"),
-            (self.remote_panel, "Remote"),
-            (self.macro_panel, "Macros"),
-            (self.console_panel, "Console"),
-        ):
-            self.tabs.addTab(scrollable(panel), label)
-        self.tabs.setMinimumWidth(260)
-        # Without an explicit minimum, the tallest page's own minimum (~300px)
-        # becomes the tab area's floor, which in stacked mode would squeeze
-        # the transport controls out of view. Every page scrolls internally,
-        # so a small floor is safe.
-        self.tabs.setMinimumHeight(150)
-
-        self.body = QSplitter(Qt.Horizontal)
-        self.body.addWidget(self.left_pane)
-        self.body.addWidget(self.tabs)
-        self.body.setStretchFactor(0, 0)
-        self.body.setStretchFactor(1, 1)
-        self.body.setChildrenCollapsible(False)
-        outer.addWidget(self.body, 1)
+        self.console_window = self._tool_window(
+            self.console_panel, "Console", (860, 620))
+        self.macro_panel = MacroPanel(self.controller, self.library)
+        self.macro_window = self._tool_window(
+            self.macro_panel, "Macros", (760, 520))
 
         self.setCentralWidget(central)
 
         self.statusBar().showMessage("Not connected")
         self._build_menu()
+        # So the handset's keyboard keys work without clicking it first.
+        self.handset_panel.setFocus()
+
+    #: Below this window width the status column and the handset no longer fit
+    #: side by side, and the window becomes a single column.
+    NARROW_WIDTH = 720
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().resizeEvent(event)
+        self._apply_layout(self.width() < self.NARROW_WIDTH)
+
+    def _apply_layout(self, narrow: bool) -> None:
+        """One column when narrow, two when wide.
+
+        Narrow is the shape the window takes docked beside a capture. The
+        status card drops to its one-line form and, with the extra keys, is
+        pinned above the handset, which scrolls in whatever height is left.
+        """
+        if narrow == self._narrow:
+            return
+        self._narrow = narrow
+        # Everything pinned above the handset gives up height when narrow,
+        # because every pixel it keeps is a row of handset keys scrolled away.
+        self.status_panel.set_compact(narrow)
+        self.connection.set_compact(narrow)
+        self._extras_heading.setVisible(not narrow)
+        if narrow:
+            self._extras_layout.setContentsMargins(10, 8, 10, 8)
+        else:
+            self._extras_layout.setContentsMargins(16, 12, 16, 12)
+        if narrow:
+            self.content.setDirection(QBoxLayout.TopToBottom)
+            self.content.setSpacing(8)
+            self._outer.setContentsMargins(8, 8, 8, 8)
+            self._outer.setSpacing(8)
+            self.side.setMinimumWidth(0)
+            self.side.setMaximumWidth(16777215)
+            self.side.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        else:
+            self.content.setDirection(QBoxLayout.LeftToRight)
+            self.content.setSpacing(16)
+            self._outer.setContentsMargins(14, 12, 14, 12)
+            self._outer.setSpacing(12)
+            self.side.setFixedWidth(360)
+            self.side.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+
+    def _tool_window(self, panel: QWidget, title: str, size) -> QDialog:
+        window = QDialog(self)
+        window.setWindowTitle(title)
+        window.resize(*size)
+        layout = QVBoxLayout(window)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(panel)
+        return window
+
+    @staticmethod
+    def _show_window(window: QDialog) -> None:
+        window.show()
+        window.raise_()
+        window.activateWindow()
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
@@ -591,20 +666,25 @@ class MainWindow(QMainWindow):
             self.theme_actions[name] = action
 
         view_menu.addSeparator()
-        quick = QAction("Configure &quick keys...", self)
-        quick.setStatusTip(
-            "Choose which remote keys sit beside the transport controls"
-        )
+        quick = QAction("Configure &extra keys...", self)
+        quick.setStatusTip("Choose which keys sit under the status card")
         quick.triggered.connect(self._configure_quick_keys)
         view_menu.addAction(quick)
 
-        self.compact_action = QAction("&Compact layout", self)
-        self.compact_action.setCheckable(True)
-        self.compact_action.setStatusTip(
-            "Use the dense layout at any width, not only when docked narrow"
-        )
-        self.compact_action.toggled.connect(self._set_compact_forced)
-        view_menu.addAction(self.compact_action)
+        tools_menu = self.menuBar().addMenu("&Tools")
+        console = QAction("&Console", self)
+        console.setShortcut(QKeySequence("Ctrl+L"))
+        console.setStatusTip("Every byte in and out, with its meaning")
+        console.triggered.connect(lambda: self._show_window(self.console_window))
+        tools_menu.addAction(console)
+        macros = QAction("&Macros", self)
+        macros.setStatusTip("Named sequences of commands with delays")
+        macros.triggered.connect(lambda: self._show_window(self.macro_window))
+        tools_menu.addAction(macros)
+        tools_menu.addSeparator()
+        clock = QAction("&Sync deck clock from this PC", self)
+        clock.triggered.connect(self._sync_clock)
+        tools_menu.addAction(clock)
 
         help_menu = self.menuBar().addMenu("&Help")
         started = QAction("&Getting started", self)
@@ -634,6 +714,9 @@ class MainWindow(QMainWindow):
         self.bridge.responded.connect(self._on_response)
 
         self.deck_selector.deckChanged.connect(self._on_deck)
+        self.handset_panel.deckToggleRequested.connect(self._on_handset_deck)
+        self.handset_panel.keySent.connect(
+            lambda text: self.statusBar().showMessage(text, 4000))
 
         self.status_panel.clearErrorRequested.connect(
             lambda: self.controller.send_command("clear")
@@ -711,9 +794,8 @@ class MainWindow(QMainWindow):
         connected = link is LinkState.CONNECTED
         # Controls that need a live link go dead when there isn't one, rather
         # than looking operable and silently doing nothing.
-        for panel in (self.transport_panel, self.record_panel, self.dvd_panel,
-                      self.remote_panel):
-            panel.setEnabled(connected)
+        for widget in (self.handset_panel, self.quick_keys):
+            widget.setEnabled(connected)
         self.deck_selector.setEnabled(connected)
         self.console_panel.set_link_enabled(connected)
         if not connected:
@@ -729,15 +811,18 @@ class MainWindow(QMainWindow):
     def _on_deck(self, deck: Deck) -> None:
         self.controller.set_deck(deck)
         self.controller.refresh_all()
-        self.transport_panel.set_deck(deck)
-        self.transport_panel.quick_keys.set_deck(deck)
-        self.dvd_panel.set_deck(deck)
-        self.remote_panel.set_deck(deck)
+        self.quick_keys.set_deck(deck)
+        self.handset_panel.set_deck(deck)
+
+    def _on_handset_deck(self, deck: Deck) -> None:
+        """The handset's VCR/DVD key switched the unit; follow it, so the
+        app's command target and the deck the keys are greyed for agree
+        with what the key just did."""
+        self.deck_selector.set_deck(deck)
+        self._on_deck(deck)
 
     def _on_state(self, state) -> None:
         self.status_panel.on_state(state)
-        self.record_panel.on_state(state)
-        self.dvd_panel.on_state(state)
         self.deck_selector.set_deck(state.deck)
 
     def _on_response(self, opcode: int, name: str) -> None:
@@ -755,7 +840,7 @@ class MainWindow(QMainWindow):
     def _configure_quick_keys(self) -> None:
         from .quickkeys import QuickKeysDialog
 
-        bar = self.transport_panel.quick_keys
+        bar = self.quick_keys
         dialog = QuickKeysDialog(bar.codes, self)
         if dialog.exec() == QDialog.Accepted:
             from .quickkeys import format_codes
@@ -778,9 +863,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("theme", palette.name)
         # Widgets that paint with colours the stylesheet cannot reach --
         # drawn icons and table text -- have to be redrawn by hand.
-        for panel in (self.console_panel, self.transport_panel,
-                      self.dvd_panel, self.record_panel):
-            panel.refresh_theme()
+        self.console_panel.refresh_theme()
 
     def _diagnose(self) -> None:
         from .diagnostics import DiagnosticsDialog
@@ -802,6 +885,16 @@ class MainWindow(QMainWindow):
             )
         QMessageBox.information(self, "Protocol probe", text)
 
+    def _sync_clock(self) -> None:
+        if not self.controller.connected:
+            QMessageBox.information(self, "Not connected",
+                                    "Connect to the deck first.")
+            return
+        date_cmd, clock_cmd = P.sync_clock()
+        self.controller.send(date_cmd)
+        self.controller.send(clock_cmd)
+        self.statusBar().showMessage("Deck clock and date set from this PC", 5000)
+
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self.controller, self)
         if dialog.exec() == QDialog.Accepted:
@@ -822,7 +915,9 @@ class MainWindow(QMainWindow):
             self, "Keyboard shortcuts",
             "<p>These work whenever the window has focus:</p>"
             f"<table>{rows}</table>"
-            "<p>They apply to whichever deck is currently selected.</p>",
+            "<p>They apply to whichever deck is currently selected.</p>"
+            "<p>After clicking the handset, the arrow keys, Enter, Backspace "
+            "(Return) and 0&ndash;9 press its keys.</p>",
         )
 
     def _about(self) -> None:
@@ -837,11 +932,6 @@ class MainWindow(QMainWindow):
         )
 
     # -- persistence -------------------------------------------------------
-
-    def _set_compact_forced(self, forced: bool) -> None:
-        self._compact_forced = forced
-        self.settings.setValue("compact", forced)
-        self._apply_responsive_layout(force=True)
 
     def _maybe_show_getting_started(self) -> None:
         """Open the guide on first run only.
@@ -858,11 +948,9 @@ class MainWindow(QMainWindow):
         from .quickkeys import parse_codes
 
         self.set_theme(str(self.settings.value("theme", "dark")))
-        self.transport_panel.quick_keys.set_codes(
+        self.quick_keys.set_codes(
             parse_codes(self.settings.value("quick_keys"))
         )
-        if str(self.settings.value("compact", "false")).lower() in ("true", "1"):
-            self.compact_action.setChecked(True)
         geometry = self.settings.value("geometry")
         if geometry:
             self.restoreGeometry(geometry)
@@ -878,59 +966,6 @@ class MainWindow(QMainWindow):
         poll = self.settings.value("poll_ms")
         if poll:
             self.controller.poll_interval = int(poll) / 1000
-
-    #: Below this width the side-by-side layout stops making sense and the
-    #: two panes stack vertically instead.
-    NARROW_WIDTH = 760
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
-        super().resizeEvent(event)
-        self._apply_responsive_layout()
-
-    def _apply_responsive_layout(self, force: bool = False) -> None:
-        """Stack the panes vertically when the window is too narrow to sit
-        them side by side -- the shape it takes when pinned beside a capture.
-
-        `force` re-applies even when the orientation has not changed, which
-        the Compact layout toggle needs.
-        """
-        narrow = self.width() < self.NARROW_WIDTH or self._compact_forced
-        for panel in (self.status_panel, self.transport_panel):
-            panel.set_compact(narrow)
-        wanted = Qt.Vertical if narrow else Qt.Horizontal
-        if self.body.orientation() == wanted and not force:
-            return
-
-        self.body.setOrientation(wanted)
-        if narrow:
-            # Stacked: the status/transport column no longer competes for
-            # width, so let it use the full span.
-            self.left_pane.setMaximumWidth(16777215)
-            self.left_pane.widget().setMaximumWidth(16777215)
-        else:
-            self.left_pane.setMaximumWidth(460)
-            self.left_pane.widget().setMaximumWidth(460)
-        # Deferred: the splitter has not been re-laid-out for its new
-        # orientation yet, and sizes set against the old geometry get
-        # rescaled into something arbitrary.
-        QTimer.singleShot(0, self._rebalance_panes)
-
-    def _rebalance_panes(self) -> None:
-        """Give each pane a sensible share after an orientation change."""
-        if self.body.orientation() == Qt.Vertical:
-            total = self.body.height()
-            # Enough height for the transport buttons where possible -- they
-            # are the point of the app, and having to scroll to reach Play
-            # would be absurd -- but capped so the tabs keep a usable share.
-            wanted = self.left_pane.widget().sizeHint().height() + 8
-            # Leave the tabs a usable strip, but otherwise favour the deck
-            # controls -- on a tall narrow window everything fits; on a short
-            # one the transport buttons are what should stay reachable.
-            top = min(wanted, max(int(total * 0.55), total - 170))
-            self.body.setSizes([top, max(150, total - top)])
-        else:
-            total = self.body.width()
-            self.body.setSizes([380, max(320, total - 380)])
 
     def closeEvent(self, event) -> None:
         if self.macro_panel.runner.running:

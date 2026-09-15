@@ -366,9 +366,39 @@ class Simulator:
             st.title = max(1, st.title - 1)
             return False
 
-        # Menus, cursor keys, setup and remote data have no simulated effect
-        # beyond the ACK already sent.
+        if op == Cmd.REMOTE_DATA and payload:
+            # The remote's transport keys do what their direct opcodes do, so
+            # the handset visibly drives the simulator.
+            if payload[0] == _REMOTE_REC:
+                # Unlike the CA Rec opcode, the remote's REC key records with
+                # no Rec Request first -- confirmed on a real SR-MV55U.
+                if st.record_forbidden or not st.media_present:
+                    self._emit(bytes((Resp.NOT_TARGET,)))
+                    return False
+                st.all_stop()
+                st.stopped = False
+                st.recording = True
+                return False
+            equivalent = self._REMOTE_EQUIVALENTS.get(payload[0])
+            if equivalent is not None:
+                if self.target is Deck.VCR and equivalent in _DVD_ONLY_OPS:
+                    return False
+                return self._apply(equivalent, b"")
+            return False
+
+        # Menus, cursor keys, setup and the remaining remote keys have no
+        # simulated effect beyond the ACK already sent.
         return False
+
+    #: Remote Data key code -> the direct opcode with the same effect.
+    _REMOTE_EQUIVALENTS = {
+        0x0C: Cmd.PLAY,
+        0x03: Cmd.STOP,
+        0x0D: Cmd.STILL,
+        0x04: Cmd.EJECT,
+        0x14: Cmd.NEXT_CHAPTER,
+        0x15: Cmd.PREV_CHAPTER,
+    }
 
     # -- sense replies -----------------------------------------------------
 
@@ -457,6 +487,14 @@ class Simulator:
                     if st.counter_seconds >= st.remaining_seconds:
                         st.counter_seconds = float(st.remaining_seconds)
                         st.all_stop()
+
+
+#: Opcodes whose remote-key equivalents only mean something on the DVD deck;
+#: on the VCR, Next/Previous step the index instead, which is not modelled.
+_DVD_ONLY_OPS = frozenset((Cmd.NEXT_CHAPTER, Cmd.PREV_CHAPTER))
+
+#: The remote's REC key (Remote Data code).
+_REMOTE_REC = 0xCC
 
 
 def _hms(seconds: float, with_seconds: bool = True) -> bytes:

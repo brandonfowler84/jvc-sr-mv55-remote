@@ -21,17 +21,14 @@ from .. import protocol as P
 from ..protocol import Deck
 from .panels import FlowWidget
 
-#: Sensible starting set: the keys with no direct-opcode equivalent, plus
-#: Audio, which is the one people look for first.
+#: Sensible starting set: the VCR keys the RM-SSR005U handset has no key for.
+#: Everything else a tape session needs is already on the handset.
 DEFAULT_QUICK_KEYS: tuple[int, ...] = (
     0x41,  # Tracking +
     0x42,  # Tracking -
+    0x40,  # Auto Tracking On/Off
     0x88,  # TBC On/Off
     0x39,  # Counter Reset
-    0x96,  # CM Skip
-    0xDC,  # Instant Replay
-    0x17,  # Audio
-    0x38,  # Display
 )
 
 MAX_QUICK_KEYS = 12
@@ -101,6 +98,10 @@ class QuickKeysBar(FlowWidget):
             item = self._layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # Hidden now, deleted later: until the deferred delete runs,
+                # an old key would otherwise still paint where it last sat,
+                # showing through as a stray border across the new ones.
+                widget.hide()
                 widget.deleteLater()
 
         by_code = {k.code: k for k in P.REMOTE_KEYS}
@@ -126,12 +127,12 @@ class QuickKeysDialog(QDialog):
 
     def __init__(self, codes, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Configure quick keys")
+        self.setWindowTitle("Configure extra keys")
         self.resize(620, 520)
 
         layout = QVBoxLayout(self)
         intro = QLabel(
-            "Choose the remote keys to keep beside the transport controls. "
+            "Choose the remote keys to keep under the status card. "
             f"Up to {MAX_QUICK_KEYS}; drag to reorder."
         )
         intro.setWordWrap(True)

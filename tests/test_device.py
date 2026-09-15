@@ -87,6 +87,25 @@ def test_stop_clears_playback(rig):
     assert wait_for(lambda: controller.state.status.transport == "Stop")
 
 
+def test_remote_transport_keys_drive_the_simulator(rig):
+    """The Handset tab sends Remote Data, not direct opcodes; the simulator
+    has to honour those too or the tab looks dead offline."""
+    controller, sim = rig
+    controller.send_remote(0x0C)  # Play / Select
+    assert wait_for(lambda: sim.decks[Deck.VCR].playing)
+    controller.send_remote(0x03)  # Stop / Clear
+    assert wait_for(lambda: sim.decks[Deck.VCR].stopped)
+
+
+def test_remote_rec_key_records_without_arming(rig):
+    """Unlike the CA Rec opcode, the remote's REC key needs no Rec Request --
+    established on a real deck, where the handset's REC simply records."""
+    controller, sim = rig
+    controller.send_remote(0xCC)
+    assert wait_for(lambda: sim.decks[Deck.VCR].recording)
+    assert not sim.decks[Deck.VCR].command_error
+
+
 def test_deck_switching_targets_the_other_deck(rig):
     controller, sim = rig
     controller.set_deck(Deck.DVD)

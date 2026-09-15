@@ -15,29 +15,27 @@ pages 73–85. Not affiliated with JVC.
 
 ## Features
 
-- **Virtual remote** — transport controls, frame stepping, VISS search, and a
-  shuttle speed control that adapts to whichever deck is selected
+One screen: live status beside a copy of the remote that came with the deck.
+
+- **Handset** — the RM-SSR005U remote, same keys in the same places and
+  colours, sending the codes the real remote sends. Keys the selected deck
+  can't use grey out, arrows repeat while held, and the keyboard works too
+  (arrows, Enter, Backspace for Return, 0–9). REC and FINALIZE ask first
 - **Live status** — decodes the deck's Status Sense continuously: transport
-  mode, counter, remaining time, media type, record-inhibit, tape sensors, disc
-  type, dubbing state
-- **Recording** — input and record-mode selection (including every FR60–FR480
-  free-rate step), with the Rec Request arming handshake the deck requires
-- **DVD navigation** — title and chapter search, menus, D-pad, finalize/erase
-  behind confirmation
-- **All ~90 wired-remote key codes** — tracking, TBC, ten-key, jog/shuttle
-  detents, input selection, everything the dedicated panels don't cover
-- **Macros** — named command sequences with delays, saved as shareable JSON,
-  with a starter set aimed at VHS→DVD transfers
-- **Console** — raw hex sender and a colour-coded traffic log with decoded
-  meanings, so you can see exactly what's on the wire
+  mode, counter, remaining time, media type, record mode, input, tape sensors,
+  disc type, dubbing state
+- **Extra keys** — the VCR keys the remote doesn't have (tracking, auto
+  tracking, TBC, counter reset) under the status card; configurable from any
+  of the ~90 wired-remote codes
+- **Macros** (Tools menu) — named command sequences with delays, saved as
+  shareable JSON, with a starter set aimed at VHS→DVD transfers
+- **Console** (Tools menu) — raw hex sender and a colour-coded traffic log with
+  decoded meanings, so you can see exactly what's on the wire
+- **Diagnostics** (Device menu) — a scripted probe that works out why a command
+  isn't doing anything, with controls either side and deck-state checks
 - **Simulator** — a built-in fake deck, so you can explore the whole app with
   no hardware connected
-- **Dark and light themes**, and a compact layout for docking the window beside
-  a capture window
-- **Quick keys** — a configurable strip of remote keys beside the transport
-  controls, so a capture never needs a tab switch
-- **Diagnostics** — a scripted probe that works out why a command isn't doing
-  anything, with controls either side and deck-state checks
+- **Dark and light themes**
 
 ---
 
@@ -154,10 +152,10 @@ Requires Python 3.10 or newer.
 
 1. Pick your serial port in the top bar and press **Connect**. If you don't
    have the cable yet, choose **Simulator** to explore everything offline.
-2. Choose **VCR** or **DVD**. Every command is deck-scoped — this is the single
-   most important control in the window, which is why it sits in the status
-   card and stays visible at every size.
-3. Drive the deck with the transport buttons, or with the keyboard:
+2. Choose **VCR** or **DVD** in the status card (or press the handset's
+   **VCR/DVD** key). Every command is deck-scoped, and keys the selected deck
+   can't use are greyed out.
+3. Use the handset as you would the real remote. The keyboard works too:
 
 | Key | Action |
 |---|---|
@@ -166,21 +164,25 @@ Requires Python 3.10 or newer.
 | `S` | Stop |
 | `J` / `L` | Rewind / fast forward |
 | `,` / `.` | Frame step back / forward |
+| Arrows, `Enter`, `Backspace` | Handset arrows, Enter, Return |
+| `0`–`9` | Handset number keys |
 
-**View → Configure quick keys…** picks which remote keys sit beside the
-transport controls. **View → Compact layout** forces the dense layout at any
-window size, and the window stacks automatically when docked narrow.
+**View → Configure extra keys…** picks which keys sit under the status card.
+
+Make the window narrow to dock it beside a capture window. Below about 720 px
+it becomes a single column: a one-line status card and the extra keys stay
+pinned at the top, and the handset scrolls underneath. It goes down to 360 px
+wide.
 
 ### Recording
 
-The deck refuses a Record command unless it has first received a **Rec
-Request**. In the Record tab, press **Arm**, then **Record**. Stop clears the
-arming again. This mirrors the deck's own behaviour rather than hiding it, so
-what you see in the app matches what the hardware is actually doing.
+Set the input with **INPUT +/−** and the mode with **REMAIN / REC MODE**, then
+press **REC** on the handset and confirm. The remote's REC key records straight
+away — unlike the serial Record command, it doesn't need a Rec Request first.
 
 ### When something doesn't work
 
-Open the **Console** tab and send `D7`. A healthy deck answers with five status
+Open **Tools → Console** and send `D7`. A healthy deck answers with five status
 bytes — note there is no `D7` in the reply; sense replies carry no opcode. If
 nothing comes back, the problem is the cable, the port settings, the warm-up
 time, or Mode Lock — in roughly that order of likelihood.

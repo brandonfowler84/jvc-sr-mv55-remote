@@ -11,7 +11,7 @@ theme's colour and scales cleanly.
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygonF
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 
 #: Nominal drawing box. Shapes are defined in 0..1 and scaled to the pixmap.
 _PAD = 0.0
@@ -98,7 +98,34 @@ def _skip_back(p: QPainter, s: float) -> None:
     _tri(p, s, [(0.86, 0.24), (0.86, 0.76), (0.44, 0.50)])
 
 
+def _curved_arrow(p: QPainter, s: float, head_right: bool) -> None:
+    """An arc over the top with the arrowhead dropping off one end.
+
+    The remote's Instant Replay and CM Skip keys: back and forward jumps.
+    Drawn with a stroke rather than a fill, so it borrows the brush colour
+    for the pen and puts the brush back for the head.
+    """
+    colour = p.brush().color()
+    p.setPen(QPen(colour, 0.10 * s))
+    p.setBrush(Qt.NoBrush)
+    p.drawArc(QRectF(0.22 * s, 0.30 * s, 0.56 * s, 0.50 * s), 0, 180 * 16)
+    p.setPen(Qt.NoPen)
+    p.setBrush(colour)
+    x = 0.78 if head_right else 0.22
+    _tri(p, s, [(x - 0.13, 0.50), (x + 0.13, 0.50), (x, 0.74)])
+
+
+def _replay(p: QPainter, s: float) -> None:
+    _curved_arrow(p, s, head_right=False)
+
+
+def _skip_ahead(p: QPainter, s: float) -> None:
+    _curved_arrow(p, s, head_right=True)
+
+
 SHAPES = {
+    "replay": _replay,
+    "skip_ahead": _skip_ahead,
     "play": _play,
     "stop": _stop,
     "pause": _pause,

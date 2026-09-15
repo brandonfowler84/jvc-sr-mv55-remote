@@ -442,10 +442,11 @@ class StatusPanel(QFrame):
         self.detail_host.setVisible(not compact)
         self.detail_separator.setVisible(not compact)
         self.summary_line.setVisible(compact)
-        self.counter_caption.setText(
-            "Counter  ·  remaining" if compact else "Counter"
-        )
-        self.counter_caption.setVisible(True)
+        # The caption costs a row, and in compact form every row counts; the
+        # tooltip keeps the explanation one hover away.
+        self.counter_caption.setVisible(not compact)
+        self.counter.setToolTip(
+            "Counter, with remaining time on the right" if compact else "")
         self.alerts.setFixedHeight(24 if compact else 34)
         self.clear_btn.setProperty("role", "compact" if compact else "")
         self.updateGeometry()
@@ -1292,6 +1293,314 @@ class RemotePanel(QWidget):
                 "Tick \"Include other deck's keys\" to see them anyway."
             )
         self._key_host.updateGeometry()
+
+
+# --------------------------------------------------------------------------
+# on-screen display
+# --------------------------------------------------------------------------
+
+#: Remote key codes this panel drives.  Named here rather than inlined so the
+#: navigation tables below read as menu steps instead of hex.
+_K_SETUP = 0x37       # Set Up -- opens and closes the Main Menu
+_K_ENTER = 0x3C
+_K_UP = 0x82
+_K_DOWN = 0x86
+_K_LEFT = 0x84
+_K_RIGHT = 0x80
+_K_DISPLAY = 0x38
+_K_ON_SCREEN_VCR = 0x1E
+_K_ON_SCREEN = 0x8E
+_K_AUTO_TRACKING = 0x40
+
+#: Rows of VCR FUNCTION SET, page 1, top to bottom (manual p. 60-61).  The
+#: index is how many Cursor Down presses reach that row once the page opens.
+_VCR_FUNCTION_SET = (
+    "S-VHS ET",
+    "VIDEO CALIBRATION",
+    "PICTURE CONTROL",
+    "VIDEO STABILIZER",
+    "SUPERIMPOSE",
+    "DIGITAL R3",
+    "NEXT PAGE",
+)
+
+
+class ScreenPanel(QWidget):
+    """Getting rid of the text the deck superimposes on its video output.
+
+    Two different things put text over the picture and they need different
+    fixes, which is why they get a panel of their own rather than another
+    handful of buttons on the Remote tab:
+
+    * **Operational indicators** -- PLAY, STOP, the counter.  Governed by the
+      ``SUPERIMPOSE`` setting.  The On Screen key clears whatever is showing,
+      but while SUPERIMPOSE is AUTO or ON the next transport command puts it
+      straight back, so clearing is a stopgap and the setting is the fix.
+    * **VIDEO CALIBRATION** -- a blinking panel the deck shows at the start of
+      automatic tracking while it profiles the tape.  No key dismisses it; it
+      has its own setup item, and it only runs at all while automatic tracking
+      is on.
+
+    Both settings live in the VCR's setup menu, and the deck reports neither
+    over the serial link -- ``SUPERIMPOSE`` is a three-way (AUTO/ON/OFF) whose
+    current value there is no way to read back.  So this panel deliberately
+    stops short of claiming to set them: it drives the menu to the right row
+    and then hands over the arrow keys, because a blind sequence of value
+    presses would be as likely to land on ON as on OFF.
+    """
+
+    #: Emitted from the macro runner's thread; a queued connection carries
+    #: them back to the GUI thread.
+    navStepped = Signal(int, object)
+    navFinished = Signal(bool, str)
+
+    def __init__(self, controller) -> None:
+        super().__init__()
+        self.controller = controller
+        self.runner = MacroRunner(controller)
+        self.runner.on_step = self.navStepped.emit
+        self.runner.on_finish = self.navFinished.emit
+        self.navFinished.connect(self._nav_finished)
+        self._deck = Deck.VCR
+        self._pending: str | None = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        intro = dim(
+            "The deck draws its own text over the video output. What clears "
+            "it depends on which text it is."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        layout.addWidget(self._build_now_box())
+        layout.addWidget(self._build_setup_box())
+        layout.addWidget(self._build_related_box())
+        layout.addStretch(1)
+
+        self._set_guide(
+            "Pick a setting above and the deck's menu will open with that row "
+            "highlighted."
+        )
+        self._sync_deck()
+
+    # -- construction ------------------------------------------------------
+
+    def _build_now_box(self) -> QGroupBox:
+        box = QGroupBox("Clear what is showing now")
+        inner = QVBoxLayout(box)
+        inner.setSpacing(8)
+
+        explain = dim(
+            "PLAY, STOP and the counter are the superimpose display. On "
+            "Screen clears it immediately."
+        )
+        explain.setWordWrap(True)
+        inner.addWidget(explain)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.clear_btn = button(
+            "Hide overlay now", role="primary",
+            tooltip="On Screen (0x1E on the VCR deck, 0x8E on the DVD deck)",
+        )
+        self.clear_btn.setMinimumHeight(40)
+        self.clear_btn.clicked.connect(self._clear_now)
+        row.addWidget(self.clear_btn, 1)
+
+        counter_btn = button("Counter display", tooltip="Display (0x38)")
+        counter_btn.clicked.connect(
+            lambda: self.controller.send_remote(_K_DISPLAY))
+        row.addWidget(counter_btn, 1)
+        inner.addLayout(row)
+
+        self.clear_note = dim("")
+        self.clear_note.setWordWrap(True)
+        inner.addWidget(self.clear_note)
+        return box
+
+    def _build_setup_box(self) -> QGroupBox:
+        box = QGroupBox("Stop it coming back")
+        inner = QVBoxLayout(box)
+        inner.setSpacing(8)
+
+        explain = dim(
+            "Both fixes are settings in the VCR's own menu, and the deck will "
+            "not report their current values over the serial link. These "
+            "buttons open the menu and move the highlight onto the right row; "
+            "read the value off the TV and change it with the arrows."
+        )
+        explain.setWordWrap(True)
+        inner.addWidget(explain)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.superimpose_btn = button("Go to SUPERIMPOSE", role="primary")
+        self.superimpose_btn.setToolTip(
+            "AUTO / ON / OFF. OFF stops the operational indicators entirely, "
+            "including on anything you dub."
+        )
+        self.superimpose_btn.clicked.connect(lambda: self._goto("SUPERIMPOSE"))
+        row.addWidget(self.superimpose_btn, 1)
+
+        self.calibration_btn = button("Go to VIDEO CALIBRATION")
+        self.calibration_btn.setToolTip(
+            "ON / OFF. OFF stops the blinking calibration panel at the start "
+            "of playback. Note that PICTURE CONTROL drops from AUTO to NORM "
+            "when this is off."
+        )
+        self.calibration_btn.clicked.connect(
+            lambda: self._goto("VIDEO CALIBRATION"))
+        row.addWidget(self.calibration_btn, 1)
+        inner.addLayout(row)
+
+        self.guide = QLabel("")
+        self.guide.setWordWrap(True)
+        inner.addWidget(self.guide)
+
+        inner.addWidget(separator())
+
+        keys = QGridLayout()
+        keys.setSpacing(6)
+        for text, code, r, c in (
+            ("▲", _K_UP, 0, 1),
+            ("◀", _K_LEFT, 1, 0),
+            ("Enter", _K_ENTER, 1, 1),
+            ("▶", _K_RIGHT, 1, 2),
+            ("▼", _K_DOWN, 2, 1),
+        ):
+            btn = button(text, tooltip=f"code 0x{code:02X}")
+            btn.setMinimumWidth(56)
+            btn.clicked.connect(
+                lambda _=False, x=code: self.controller.send_remote(x))
+            keys.addWidget(btn, r, c)
+
+        self.close_btn = button(
+            "Close menu", tooltip="Set Up (0x37) again, which saves and exits")
+        self.close_btn.clicked.connect(self._close_menu)
+        keys.addWidget(self.close_btn, 1, 3)
+        keys.setColumnStretch(4, 1)
+        inner.addLayout(keys)
+
+        self.deck_note = dim("")
+        self.deck_note.setWordWrap(True)
+        inner.addWidget(self.deck_note)
+        return box
+
+    def _build_related_box(self) -> QGroupBox:
+        box = QGroupBox("Related")
+        inner = QVBoxLayout(box)
+        inner.setSpacing(8)
+
+        self.tracking_btn = button(
+            "Auto Tracking On/Off",
+            tooltip="Auto Tracking On/Off (0x40), VCR deck",
+        )
+        self.tracking_btn.clicked.connect(
+            lambda: self.controller.send_remote(_K_AUTO_TRACKING))
+        inner.addWidget(self.tracking_btn, 0, Qt.AlignLeft)
+
+        note = dim(
+            "Video Calibration only runs while automatic tracking is on, so "
+            "turning tracking off suppresses it for this tape without "
+            "touching the menu. It is a toggle and the deck does not report "
+            "which way it went -- watch the picture."
+        )
+        note.setWordWrap(True)
+        inner.addWidget(note)
+        return box
+
+    # -- state -------------------------------------------------------------
+
+    def set_deck(self, deck: Deck) -> None:
+        self._deck = deck
+        self._sync_deck()
+
+    def _sync_deck(self) -> None:
+        vcr = self._deck is Deck.VCR
+        for widget in (self.superimpose_btn, self.calibration_btn,
+                       self.tracking_btn):
+            widget.setEnabled(vcr)
+        if vcr:
+            self.deck_note.setText(
+                "Menu rows are taken from the manual (p. 60-61); if the "
+                "highlight lands somewhere else, walk it there with the "
+                "arrows."
+            )
+            self.clear_note.setText(
+                "While SUPERIMPOSE is AUTO or ON this only clears the current "
+                "display -- the next transport command brings it back."
+            )
+        else:
+            self.deck_note.setText(
+                "These are VCR-deck settings. Select the VCR deck at the top "
+                "left to reach them."
+            )
+            self.clear_note.setText(
+                "On the DVD deck this sends On Screen twice, which is what "
+                "clears the on-screen bar."
+            )
+
+    def _set_guide(self, text: str) -> None:
+        self.guide.setText(text)
+
+    # -- actions -----------------------------------------------------------
+
+    def _clear_now(self) -> None:
+        if self._deck is Deck.VCR:
+            # One press clears it on the VCR deck (manual p. 15).
+            self.controller.send_remote(_K_ON_SCREEN_VCR)
+        else:
+            # The DVD deck cycles indicators -> on-screen bar -> nothing, so
+            # clearing from the indicators takes two presses (manual p. 14).
+            self.controller.send_remote(_K_ON_SCREEN)
+            self.controller.send_remote(_K_ON_SCREEN)
+
+    def _close_menu(self) -> None:
+        self.controller.send_remote(_K_SETUP)
+        self._set_guide(
+            "Menu closed. The setting is kept even if the unit is unplugged."
+        )
+
+    def _goto(self, row: str) -> None:
+        if self.runner.running:
+            return
+        if not self.controller.connected:
+            QMessageBox.information(self, "Not connected",
+                                    "Connect to the deck first.")
+            return
+        depth = _VCR_FUNCTION_SET.index(row)
+        steps = [
+            Step("remote", _K_SETUP),
+            # The menu is drawn over video and takes a moment to appear; keys
+            # sent into that gap are dropped.
+            Step("wait", 1.5),
+            Step("remote", _K_DOWN),   # Main Menu: COPY SET -> FUNCTION SET
+            Step("remote", _K_ENTER),
+            Step("wait", 1.5),
+        ]
+        steps += [Step("remote", _K_DOWN)] * depth
+        self._pending = row
+        self.superimpose_btn.setEnabled(False)
+        self.calibration_btn.setEnabled(False)
+        self._set_guide(f"Opening the menu and moving to {row}...")
+        self.runner.run(Macro(name=f"Go to {row}", steps=steps))
+
+    def _nav_finished(self, ok: bool, message: str) -> None:
+        self._sync_deck()
+        row = self._pending
+        self._pending = None
+        if not ok:
+            self._set_guide(f"Could not get there: {message}")
+            return
+        self._set_guide(
+            f"The TV should now show FUNCTION SET with {row} highlighted. "
+            f"Press ▶ until its value reads OFF, then Close menu. If a "
+            f"different row is highlighted, move onto {row} with ▲ "
+            f"▼ first."
+        )
 
 
 # --------------------------------------------------------------------------

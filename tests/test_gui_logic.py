@@ -330,3 +330,177 @@ def test_macro_panel_validates_steps(qapp, tmp_path):
     ):
         with pytest.raises(ValueError):
             panel._build_step(kind, bad)
+
+
+# -- screen / on-screen display -------------------------------------------
+
+@pytest.fixture
+def screen_panel(qapp):
+    from jvcvcr.gui.panels import ScreenPanel
+
+    controller = FakeController()
+    return ScreenPanel(controller), controller
+
+
+def test_clear_overlay_uses_the_vcr_on_screen_key(screen_panel):
+    panel, controller = screen_panel
+    panel.set_deck(Deck.VCR)
+    panel._clear_now()
+    assert controller.sent == [P.remote(0x1E)]
+
+
+def test_clear_overlay_presses_twice_on_the_dvd_deck(screen_panel):
+    # The DVD deck cycles indicators -> on-screen bar -> nothing, so a single
+    # press swaps one overlay for another rather than clearing it.
+    panel, controller = screen_panel
+    panel.set_deck(Deck.DVD)
+    panel._clear_now()
+    assert controller.sent == [P.remote(0x8E), P.remote(0x8E)]
+
+
+def test_setup_navigation_is_vcr_only(screen_panel):
+    panel, _ = screen_panel
+    panel.set_deck(Deck.DVD)
+    assert not panel.superimpose_btn.isEnabled()
+    panel.set_deck(Deck.VCR)
+    assert panel.superimpose_btn.isEnabled()
+
+
+@pytest.mark.parametrize("row, downs", [
+    ("VIDEO CALIBRATION", 1),
+    ("SUPERIMPOSE", 4),
+])
+def test_setup_navigation_walks_to_the_right_menu_row(screen_panel, row, downs):
+    from jvcvcr.gui import panels as pnl
+
+    panel, _ = screen_panel
+    steps = []
+    panel.runner.run = lambda macro: steps.extend(macro.steps)
+    panel._goto(row)
+
+    kinds = [(s.kind, s.value) for s in steps]
+    # Set Up, then one Down onto FUNCTION SET, Enter, then `downs` more.
+    assert kinds[0] == ("remote", pnl._K_SETUP)
+    remotes = [v for k, v in kinds if k == "remote"]
+    assert remotes[:3] == [pnl._K_SETUP, pnl._K_DOWN, pnl._K_ENTER]
+    assert remotes[3:] == [pnl._K_DOWN] * downs
+    # Waits sit where the menu needs time to draw, not between every key.
+    assert [k for k, _ in kinds].count("wait") == 2
+
+
+def test_setup_navigation_never_guesses_the_value(screen_panel):
+    # SUPERIMPOSE is a three-way the deck will not report, so the panel must
+    # stop at the row and leave the value to the operator.
+    from jvcvcr.gui import panels as pnl
+
+    panel, _ = screen_panel
+    steps = []
+    panel.runner.run = lambda macro: steps.extend(macro.steps)
+    panel._goto("SUPERIMPOSE")
+
+    values = [s.value for s in steps if s.kind == "remote"]
+    assert pnl._K_RIGHT not in values
+    assert pnl._K_LEFT not in values
+
+
+# -- handset ---------------------------------------------------------------
+
+@pytest.fixture
+def handset(qapp):
+    from jvcvcr.gui.handset import HandsetPanel
+
+    controller = FakeController()
+    return HandsetPanel(controller), controller
+
+
+def test_handset_codes_match_the_remote_table():
+    """Every code a handset key sends must be a real remote key, scoped to a
+    deck it actually works on -- a typo here would send a silent no-op."""
+    from jvcvcr.gui.handset import KEYS
+
+    by_code = {k.code: k for k in P.REMOTE_KEYS}
+    for key in KEYS:
+        for deck, code in ((Deck.VCR, key.vcr), (Deck.DVD, key.dvd)):
+            if code is None:
+                continue
+            assert code in by_code, f"{key.id}: 0x{code:02X} is not a remote key"
+            assert by_code[code].deck in (None, deck), (
+                f"{key.id}: 0x{code:02X} does not work on the {deck.value} deck"
+            )
+        # A both-decks code must not be left off one deck by mistake.
+        if key.dvd is not None and by_code[key.dvd].deck is None:
+            assert key.vcr is not None, f"{key.id} is needlessly DVD-only"
+
+
+def test_handset_key_sends_its_remote_code(handset):
+    panel, controller = handset
+    announced = []
+    panel.keySent.connect(announced.append)
+    panel.buttons["play"].click()
+    assert controller.sent == [P.remote(0x0C)]
+    assert announced and "9F 0C" in announced[0]
+
+
+def test_handset_on_screen_follows_the_deck(handset):
+    panel, controller = handset
+    panel.set_deck(Deck.VCR)
+    panel.press("on_screen")
+    panel.set_deck(Deck.DVD)
+    panel.press("on_screen")
+    assert controller.sent == [P.remote(0x1E), P.remote(0x8E)]
+
+
+def test_handset_greys_out_dvd_keys_on_the_vcr(handset):
+    panel, controller = handset
+    panel.set_deck(Deck.VCR)
+    assert not panel.buttons["n5"].isEnabled()
+    assert not panel.buttons["top_menu"].isEnabled()
+    assert panel.buttons["enter"].isEnabled()
+    assert panel.press("n5") is False
+    assert controller.sent == []
+
+    panel.set_deck(Deck.DVD)
+    assert panel.buttons["n5"].isEnabled()
+    panel.press("n5")
+    assert controller.sent == [P.remote(0x25)]
+
+
+def test_handset_tv_keys_are_dead_on_both_decks(handset):
+    panel, _ = handset
+    for deck in Deck:
+        panel.set_deck(deck)
+        for key_id in ("f1", "f2", "f3", "tv_vcr", "vol_up", "vol_down"):
+            assert not panel.buttons[key_id].isEnabled()
+
+
+def test_handset_rec_asks_first(handset, monkeypatch):
+    from jvcvcr.gui import handset as hs
+
+    panel, controller = handset
+    answer = [hs.QMessageBox.Cancel]
+    monkeypatch.setattr(hs.QMessageBox, "warning", lambda *a, **k: answer[0])
+
+    panel.press("rec")
+    assert controller.sent == []
+
+    answer[0] = hs.QMessageBox.Yes
+    panel.press("rec")
+    assert controller.sent == [P.remote(0xCC)]
+
+
+def test_handset_deck_key_asks_the_app_to_follow(handset):
+    panel, controller = handset
+    panel.set_deck(Deck.VCR)
+    seen = []
+    panel.deckToggleRequested.connect(seen.append)
+
+    panel.press("vcr_dvd")
+    assert controller.sent == [P.remote(0xD6)]
+    assert seen == [Deck.DVD]
+
+
+def test_handset_keyboard_map_points_at_real_keys():
+    from jvcvcr.gui.handset import KEYBOARD, KEYS_BY_ID
+
+    assert set(KEYBOARD.values()) <= set(KEYS_BY_ID)
+    assert KEYBOARD["Backspace"] == "return"

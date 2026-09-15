@@ -12,7 +12,7 @@ The lower three layers have no GUI dependency, so they can be used from
 scripts or other applications.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 from . import protocol  # noqa: F401
 from .protocol import Deck  # noqa: F401

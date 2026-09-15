@@ -148,6 +148,10 @@ It works, but note:
   Audio, Display, On Screen, Subtitle, Angle, Set Up. They will appear dead if
   you are watching the app rather than the TV.
 - Some keys are deck-specific; the manual's table marks which.
+- **REC (`9F CC`) needs no Rec Request.** The `CA` Rec opcode is refused until
+  `FA` has armed the deck, but the remote's REC key records immediately.
+  Confirmed on a real SR-MV55U. Anything that wants recording gated behind a
+  deliberate step has to do the gating itself.
 
 ---
 
